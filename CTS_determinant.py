@@ -44,11 +44,12 @@ pts_per_line = 2  # mm Choose 1mm if you want each whole line representing one s
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
 nozzle_v_max = 1  # mm/min
-nozzle_v_cap = 5  # mm/min
+nozzle_v_cap = 50  # mm/min
 
 velocity_of_nozzle = 400  # mm/min
 velocity_of_nozzle_cap = 800  # mm/min
 bed_dist = 14  # mm
+raise_height = 3    #mm
 
 flathead_nozzle_width = 10  # mm
 
@@ -56,7 +57,6 @@ mm_to_ml_constant = 48
 gear_ratio_constant = -1  # mm/mm changed settings in printer.cfg
 cylinder_length_per_volume = 5.53  # obtain from measuring distance between syringe indents mm/ml
 mm_stepper_per_ml_syringe = cylinder_length_per_volume / gear_ratio_constant  # mm_stepper/ml_syringe
-print(mm_stepper_per_ml_syringe)
 
 use_collagen = 0
 use_flathead = 0
@@ -69,7 +69,7 @@ list_of_boxes = []
 spliced_coordinate = []
 input_coordinate = []
 speed_corresponding_to_spliced_coord = []
-
+z_list = []
 
 # use for nxn product
 def get_coordinate_init_centered(width, height):
@@ -98,8 +98,8 @@ def draw_rect(set):
 
 
 # gcode writer that will combine coordinate information and speed information
-def get_gcode_block(position, fillament_speed):
-    return f"G1 X{position[0]} Y{position[1]} Z{bed_dist} E{fillament_speed} F{velocity_of_nozzle}"
+def get_gcode_block(position, fillament_speed, height):
+    return f"G1 E{fillament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
 
 def get_gcode_block_movement_only(position, filament_speed):
@@ -109,7 +109,7 @@ def get_gcode_block_movement_only(position, filament_speed):
 ##################################################################################################################################################################################################
 
 def find_path():
-    global input_coordinate
+    global input_coordinate, z_list
 
     coord_init = get_coordinate_init_centered(product_width, product_height)
 
@@ -159,12 +159,19 @@ def find_path():
     input_coordinate = np.array(input_coordinate)
     if (transpose_graph):
         input_coordinate = np.flip(input_coordinate, 1)
+    
+    if(one_dir_printing): repition_modifier = 1
+    else: repition_modifier =0
+    
+    z_list_length = len(input_coordinate)/2*pts_per_line + repition_modifier*num_groups*line_per_group
+    z_list = np.zeros(int(z_list_length))
+    print(z_list)
 
 
 ##################################################################################################################################################################################################
 
 def do_splice():
-    global spliced_coordinate, spliced_plot
+    global spliced_coordinate, spliced_plot, z_list
     spliced_plot.clear()
     spliced_coordinate = np.empty((1, 2))
 
@@ -179,12 +186,17 @@ def do_splice():
         if use_flathead:
             draw_rect(set)
         if (one_dir_printing and set != len(input_coordinate) - 1):
-            spliced_vector = splice_vector_into_pts(input_coordinate[set + 1], input_coordinate[set + 2],
-                                                    int(pts_per_line))
+            print(set)
+            spliced_vector = splice_vector_into_pts(input_coordinate[set + 1], input_coordinate[set + 2],int(pts_per_line))
             spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
+            z_list[set+2] = bed_dist+raise_height
             if use_flathead:
                 draw_rect(set + 1)
+    
+    z_list[np.where(z_list==0)] = bed_dist
     spliced_coordinate = np.delete(spliced_coordinate, 0, 0)
+    
+    print(z_list)
 
 
 def calc_speeds():
@@ -192,14 +204,15 @@ def calc_speeds():
     # create array for each point's speed
     speed_corresponding_to_spliced_coord = np.linspace(nozzle_v_min, nozzle_v_max, len(spliced_coordinate)) * -1
     # print(speed_corresponding_to_spliced_coord)
-    print(len(speed_corresponding_to_spliced_coord))
     print(f"Material Usage: {(nozzle_v_max - nozzle_v_min) * mm_stepper_per_ml_syringe}mL")
 
-
-# this will forever be a test page cuz it sucks lol
+###GUI stuff mostly
 
 do_refresh = 1
 
+def clear():
+    for ids in root.tk.eval('after info').split():
+        root.after_cancel(ids)
 
 def make_entry(root, comment):
     entry_label = Label(root, text=comment)
@@ -247,13 +260,11 @@ def auto_fill(widget, text):
 
 
 def refresh():
-    global use_flathead, use_collagen
-    global do_refresh
-    if not do_refresh: return
-
-    undress_graph(graph)
-    dress_graph(graph)
-
+    global use_flathead, use_collagen, do_refresh
+    if do_refresh == False or var.get() > 200: return
+    
+    var.set(var.get() +1)
+    
     if (flathead_mode.get()):
         auto_fill(lpg, 1)
         hide_entry(lpg)
@@ -264,23 +275,25 @@ def refresh():
 
 
 def upload_settings():
-    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, one_dir_printing, transpose_graph, start_in_reverse
+    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, one_dir_printing, transpose_graph, start_in_reverse, do_refresh
+    try:
+        product_width = float(width.get())
+        product_height = float(height.get())
+        num_groups = int(groups.get())
+        line_per_group = int(lpg.get())
+        nozzle_v_min = float(v_min.get())
+        nozzle_v_max = float(v_max.get())
+        velocity_of_nozzle = float(v_nozzle.get())
+        use_collagen = collagen_mode.get()
+        use_flathead = flathead_mode.get()
+        one_dir_printing = one_dir_mode.get()
+        transpose_graph = transpose_mode.get()
+        start_in_reverse = reverse_start_mode.get()
+    except ValueError:
+        print("Error in Values")
 
-    product_width = float(width.get())
-    product_height = float(height.get())
-    num_groups = int(groups.get())
-    line_per_group = int(lpg.get())
-    nozzle_v_min = float(v_min.get())
-    nozzle_v_max = float(v_max.get())
-    velocity_of_nozzle = float(v_nozzle.get())
-    use_collagen = collagen_mode.get()
-    use_flathead = flathead_mode.get()
-    one_dir_printing = one_dir_mode.get()
-    transpose_graph = transpose_mode.get()
-    start_in_reverse = reverse_start_mode.get()
-
-    global do_refresh
     do_refresh = 0
+    root.quit()
     root.destroy()
 
 
@@ -290,14 +303,12 @@ def do_CTS():
     auto_fill(height, product_height)
     auto_fill(groups, num_groups)
     auto_fill(lpg, line_per_group)
-    one_dir_mode.set(False)
-
 
 ##################################################################################################################################################################################################
 def update_graph():
-    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, do_refresh, one_dir_printing, transpose_graph, start_in_reverse
-    do_refresh = 0, list_of_boxes
-
+    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, do_refresh, one_dir_printing, transpose_graph, start_in_reverse, list_of_boxes, graph
+    
+    undress_graph(graph)
     list_of_boxes.clear()
 
     try:
@@ -327,7 +338,7 @@ def update_graph():
 
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
-    spliced_plot.scatter(spliced_coordinate[0][0], spliced_coordinate[0][1])
+
     x = spliced_coordinate[:, 0]
     y = spliced_coordinate[:, 1]
     #this plots the points themselves
@@ -340,16 +351,16 @@ def update_graph():
         temp = spliced_coordinate[index:index + 2]
         spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index] * -1, 3))
     spliced_plot.set_position([0.1526641340346775, 0.187, 0.719671731930645, 0.6930000000000001])  # idk it just looks good on the gui
-    legend = spliced_plot.legend(fontsize=3, loc='upper center', bbox_to_anchor=(0.5, 0.5), ncols=num_groups)
+    legend = spliced_plot.legend(fontsize=3, loc='upper center', bbox_to_anchor=(0.5, 0), ncols=num_groups)
     #boxes
     for box in list_of_boxes:
         spliced_plot.add_patch(box)
-    spliced_plot.scatter(x, y, s=3)
+    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/15)   #the difference isnt that defined, just trying numbers here tbh
     spliced_plot.set_title("Print Path")
     plt.tight_layout()
     
+    #scrolling section
     d = {"down" : 20, "up" : -20}
-
     def func(evt):
         if legend.contains(evt):
             bbox = legend.get_bbox_to_anchor()
@@ -357,34 +368,31 @@ def update_graph():
             tr = legend.axes.transAxes.inverted()
             legend.set_bbox_to_anchor(bbox.transformed(tr))
             figure.canvas.draw_idle()
-
     figure.canvas.mpl_connect("scroll_event", func)
     
     # Redraw the canvas
     graph.draw()
-
-    do_refresh = 1
+    dress_graph(graph)
 
 
 ###################################################################################################################################################################################################################################################################################################
 
 # Create the GUI window
 root = Tk()
-mainframe = ttk.Frame(root, padding="3 3 12 12")
-mainframe.place(x=0, y=0)
-
-left_frame = ttk.Labelframe(root, padding="9 9 12 12")
-left_frame.place(x=20, y=2.5)
-
-right_frame = ttk.Labelframe(root, text="PREVIEW:", padding="3 3 12 12")
-right_frame.place(x=280, y=2.5)
-
 root.geometry("800x650")
 root.title("Settings")
+
+mainframe = ttk.Frame(root, padding="3 3 12 12")
+mainframe.place(x=0, y=0)
+left_frame = ttk.Labelframe(root, padding="9 9 12 12")
+left_frame.place(x=20, y=2.5)
+right_frame = ttk.Labelframe(root, text="PREVIEW:", padding="3 3 12 12")
+right_frame.place(x=280, y=2.5)
 
 graph = FigureCanvasTkAgg(figure, master=right_frame)
 graph.get_tk_widget().place()
 
+var = IntVar()
 collagen_mode = BooleanVar()
 flathead_mode = BooleanVar()
 transpose_mode = BooleanVar()
@@ -403,42 +411,17 @@ lpg = make_entry(left_frame, "Number of Lines/Group: ")
 v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/s]: ")
 v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]]: ")
 v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/s]: ")
-
 cts_button = make_button(left_frame, "Do CTS", do_CTS)
 update_graph = make_button(left_frame, "Update Graph", update_graph)
 create_button = make_button(left_frame, "Write File", upload_settings)
 
 refresh()
 
+#root.protocol('WM_DELETE_WINDOW', quit)
+
 root.mainloop()
 
-# Calculations:
-# generate rough lines, then can populate new coordinate list with linspaced points for increments
-
-# generating lines w/out increment:
-find_path()
-
-# incrementize coordinates:
-do_splice()
-
-spliced_plot.set_aspect('equal', adjustable='box')
-spliced_plot.scatter(spliced_coordinate[0][0], spliced_coordinate[0][1])
-x = spliced_coordinate[:, 0]
-y = spliced_coordinate[:, 1]
-plt.axis([0, x_max, 0, y_max])
-spliced_plot.plot(x, y)
-ax = plt.gca()
-# dont worry abt this
-for box in list_of_boxes:
-    try:
-        ax.add_patch(box)
-    except Exception:
-        pass
-spliced_plot.scatter(x, y, s=3)
-plt.title("Print Path")
-
-calc_speeds()
-
+print("running gcode convert section")
 # create file:
 if use_collagen:
     material = "collagen"
@@ -450,7 +433,7 @@ if use_flathead:
 else:
     nozzle = "needle"
 
-file_name = f"File_{(datetime.today().strftime('%Y-%m-%d %H:%M:%S'))}_{material}_{product_width}x{product_height}_{nozzle}"
+file_name = f"File_{material}_{nozzle}"
 if (len(file_name) > 1):
     with open(str(file_name) + ".gcode", "w") as f:
         # description
@@ -466,7 +449,7 @@ if (len(file_name) > 1):
         f.write(f"\n\n\n{positioning}")
         f.write(f"\n{units}")
         f.write(f"\n{extrusion_type}")
-        f.write(f"\nG28 F{velocity_of_nozzle} Z{bed_dist}")
+        f.write(f"\nG28 0\n\n")
 
         # nozzle stuff:
         if (use_collagen):
@@ -476,10 +459,12 @@ if (len(file_name) > 1):
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
             f.write(f"M190 S{bed_temp}\n\n")
         for i in range(len(spliced_coordinate)):
-            line = get_gcode_block(spliced_coordinate[i], speed_corresponding_to_spliced_coord[i])
+            line = get_gcode_block(spliced_coordinate[i], speed_corresponding_to_spliced_coord[i], z_list[i])
             f.write(f"\n{line}")
 
         # ending code here
         if (not use_collagen):
             f.write("\n\n\nM104 T0 S0\nM140 S0\nM84")
         f.write("\nM30\n;end of code")
+clear()
+exit()
