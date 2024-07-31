@@ -11,26 +11,27 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
 # constants:##################################################################################################################################################################################################
-HOME = 'G28'  # this is a custom saved location
-positioning = 'G90'  # absolute positioning
-units = 'G21'  # everything using mm
+# too lazy to change all vars into capital globals :/
+HOME = 'G28'            # this is a custom saved location
+positioning = 'G90'     # absolute positioning
+units = 'G21'           # everything using mm
 extrusion_type = 'M83'  # Relative is good for speed; M82 Abs is good for setting volume
 
 # settings:
-material = 'PCL'  # purely informational, does not affect printer function
-printer = 'Voron'  # purely informational
-nozzle_temp = 230  # C probably depends on material...
-bed_temp = 35  # C sometimes will get stuck if above 40
+material = 'PCL'    # purely informational, does not affect printer function
+printer = 'Voron'   # purely informational
+nozzle_temp = 230   # C probably depends on material...
+bed_temp = 35       # C sometimes will get stuck if above 40
 
 # platform limits(be aware that it could go over if inaccurate)
 x_max = 101  # mm
 y_max = 118  # mm
 
 # Line Settings: How wide and tall for the box of lines: in mm
-product_width = 50  # mm SHOULD NOT BE GREATER THAN X_MAX
-product_height = 40  # mm SHOULD NOT BE GREATER THAN Y_MAX
-num_groups = 5  # number of line groups - consecutive lines made with same speed
-line_per_group = 2  # mm gap between lines of the same line group
+product_width = 50      # mm SHOULD NOT BE GREATER THAN X_MAX
+product_height = 40     # mm SHOULD NOT BE GREATER THAN Y_MAX
+num_groups = 5          # number of line groups - consecutive lines made with same speed
+line_per_group = 2      # mm gap between lines of the same line group
 ratio_of_dxgroup_dxline = 2  # ratio between distance between lines and distance between groups of lines so dxg/dxl
 
 # one dir printing doesnt rly work since it adds new points to traverse. :/
@@ -39,17 +40,17 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 2  # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 5    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
-nozzle_v_max = 1  # mm/min
-nozzle_v_cap = 50  # mm/min
+nozzle_v_max = 1    # mm/min
+nozzle_v_cap = 50   # mm/min
 
 velocity_of_nozzle = 400  # mm/min
 velocity_of_nozzle_cap = 800  # mm/min
-bed_dist = 14  # mm
-raise_height = 3    #mm
+bed_dist = 14       # mm
+raise_height = 3    # mm
 
 flathead_nozzle_width = 10  # mm
 
@@ -78,8 +79,6 @@ def get_coordinate_init_centered(width, height):
     if (transpose_graph): coord_init = np.array([y_max - width, x_max - height]) / 2
     return coord_init
 
-coord_init = get_coordinate_init_centered(product_width,product_height)
-
 def splice_vector_into_pts(xy_init, xy_final, pts_per_line):
     result = np.linspace(xy_init, xy_final, pts_per_line)
     return result
@@ -101,9 +100,8 @@ def draw_rect(set):
 def get_gcode_block(position, fillament_speed, height):
     return f"G1 E{fillament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
-
-def get_gcode_block_movement_only(position, filament_speed):
-    return f"G1 X{position[0]} Y{position[1]} Z{bed_dist}"
+def get_gcode_block_movement_only(position, filament_speed, height):
+    return f"G0 F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
 
 ##################################################################################################################################################################################################
@@ -132,7 +130,7 @@ def find_path():
         input_coordinate.append(coord_init)
 
     def find_next_pt(input, viable_opt):
-        if (input == viable_opt[0]):
+        if input == viable_opt[0]:
             return viable_opt[1]
         return viable_opt[0]
 
@@ -160,12 +158,11 @@ def find_path():
     if (transpose_graph):
         input_coordinate = np.flip(input_coordinate, 1)
     
-    if(one_dir_printing): repition_modifier = 1
-    else: repition_modifier =0
+    if(one_dir_printing): repition_modifier = 1/1.5
+    else: repition_modifier = 0.5
     
-    z_list_length = len(input_coordinate)/2*pts_per_line + repition_modifier*num_groups*line_per_group
+    z_list_length = len(input_coordinate)*repition_modifier*pts_per_line
     z_list = np.zeros(int(z_list_length))
-    print(z_list)
 
 
 ##################################################################################################################################################################################################
@@ -185,8 +182,8 @@ def do_splice():
         spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
         if use_flathead:
             draw_rect(set)
+        #handles the drawing backwards part for one dir printing
         if (one_dir_printing and set != len(input_coordinate) - 1):
-            print(set)
             spliced_vector = splice_vector_into_pts(input_coordinate[set + 1], input_coordinate[set + 2],int(pts_per_line))
             spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
             z_list[set+2] = bed_dist+raise_height
@@ -195,16 +192,27 @@ def do_splice():
     
     z_list[np.where(z_list==0)] = bed_dist
     spliced_coordinate = np.delete(spliced_coordinate, 0, 0)
-    
-    print(z_list)
 
 
 def calc_speeds():
     global speed_corresponding_to_spliced_coord
     # create array for each point's speed
-    speed_corresponding_to_spliced_coord = np.linspace(nozzle_v_min, nozzle_v_max, len(spliced_coordinate)) * -1
-    # print(speed_corresponding_to_spliced_coord)
-    print(f"Material Usage: {(nozzle_v_max - nozzle_v_min) * mm_stepper_per_ml_syringe}mL")
+    v_list_length = (pts_per_line-1)*line_per_group*num_groups
+    speed_corresponding_to_spliced_coord = np.linspace(nozzle_v_min, nozzle_v_max, v_list_length) * -1
+    arr = speed_corresponding_to_spliced_coord
+    print(speed_corresponding_to_spliced_coord)
+    #adds 0s whenever not printing
+    count = 0
+    for set in range(v_list_length + line_per_group*num_groups):
+        if (set+1)%pts_per_line == 0:
+            if(one_dir_printing):
+                arr = np.insert(arr, set+count, np.zeros(pts_per_line).flatten())
+                count += pts_per_line
+            arr = np.insert(arr, set+count, np.zeros(1).flatten())
+            count += 0
+    speed_corresponding_to_spliced_coord = arr
+
+    #print(f"Material Usage: {(nozzle_v_max - nozzle_v_min) * mm_stepper_per_ml_syringe}mL")
 
 ###GUI stuff mostly
 
@@ -341,26 +349,35 @@ def update_graph():
 
     x = spliced_coordinate[:, 0]
     y = spliced_coordinate[:, 1]
-    #this plots the points themselves
+    # this plots the points themselves
     spliced_plot.set_xlim([0, x_max])
     spliced_plot.set_ylim([0, y_max])
-    #here is each spliced segment plotted in different colors and labeled
-    colors = plt.cm.Spectral(np.linspace(0,1,len(spliced_coordinate)))
+    # here is each spliced segment plotted in different colors and labeled
+    colors = plt.cm.Spectral(np.linspace(0,1,num_groups*line_per_group*(pts_per_line-1)))
     spliced_plot.set_prop_cycle('color', colors)
-    for index in range(len(spliced_coordinate) - 1):
-        temp = spliced_coordinate[index:index + 2]
-        spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index] * -1, 3))
+    for index in range(1,len(spliced_coordinate)):
+        temp = spliced_coordinate[index-1:index+1]
+        #checking if index has corresponding speed assigned to it
+        try:
+            print(f"ACQUIRED FOR #{index}: {speed_corresponding_to_spliced_coord[index-1]}")
+        except:
+            print(f"MISSING FOR #{index}")
+        #plotting segments: grey dashed is no printing
+        if speed_corresponding_to_spliced_coord[index-1] == 0:
+            spliced_plot.plot(temp[:, 0], temp[:, 1], color = "grey", ls = (0,(1,1)))
+        else:
+            spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index-1],2)*-1)
     spliced_plot.set_position([0.1526641340346775, 0.187, 0.719671731930645, 0.6930000000000001])  # idk it just looks good on the gui
     legend = spliced_plot.legend(fontsize=3, loc='upper center', bbox_to_anchor=(0.5, 0), ncols=num_groups)
-    #boxes
+    # boxes
     for box in list_of_boxes:
         spliced_plot.add_patch(box)
-    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/15)   #the difference isnt that defined, just trying numbers here tbh
+    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/15)   # the difference isnt that defined, just trying numbers here tbh
     spliced_plot.set_title("Print Path")
     plt.tight_layout()
     
-    #scrolling section
-    d = {"down" : 20, "up" : -20}
+    # scrolling section
+    d = {"down": 20, "up": -20}
     def func(evt):
         if legend.contains(evt):
             bbox = legend.get_bbox_to_anchor()
@@ -375,7 +392,7 @@ def update_graph():
     dress_graph(graph)
 
 
-###################################################################################################################################################################################################################################################################################################
+########################################################################################################################
 
 # Create the GUI window
 root = Tk()
@@ -417,8 +434,6 @@ create_button = make_button(left_frame, "Write File", upload_settings)
 
 refresh()
 
-#root.protocol('WM_DELETE_WINDOW', quit)
-
 root.mainloop()
 
 print("running gcode convert section")
@@ -434,7 +449,7 @@ else:
     nozzle = "needle"
 
 file_name = f"File_{material}_{nozzle}"
-if (len(file_name) > 1):
+if len(file_name) > 1:
     with open(str(file_name) + ".gcode", "w") as f:
         # description
         f.write(";File Name: " + str(file_name))
@@ -452,8 +467,8 @@ if (len(file_name) > 1):
         f.write(f"\nG28 0\n\n")
 
         # nozzle stuff:
-        if (use_collagen):
-            pass
+        if use_collagen:
+            f.write(f"\nM190 S38\n")
         else:
             f.write(
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
@@ -463,7 +478,7 @@ if (len(file_name) > 1):
             f.write(f"\n{line}")
 
         # ending code here
-        if (not use_collagen):
+        if not use_collagen:
             f.write("\n\n\nM104 T0 S0\nM140 S0\nM84")
         f.write("\nM30\n;end of code")
 clear()
