@@ -40,17 +40,17 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 5    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 3    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
 nozzle_v_max = 1    # mm/min
 nozzle_v_cap = 50   # mm/min
 
-velocity_of_nozzle = 400  # mm/min
+velocity_of_nozzle = 600  # mm/min
 velocity_of_nozzle_cap = 800  # mm/min
-bed_dist = 14       # mm
-raise_height = 3    # mm
+bed_dist = 6       # mm
+raise_height = 4    # mm
 
 flathead_nozzle_width = 10  # mm
 
@@ -73,11 +73,12 @@ speed_corresponding_to_spliced_coord = []
 z_list = []
 
 # use for nxn product
-def get_coordinate_init_centered(width, height):
+def get_coordinate_init_centered(width, height, dx_line, x_max, y_max):
     # always want the product to be centered, cannot go beyond the limit
-    coord_init = np.array([x_max - width, y_max - height]) / 2
-    if (transpose_graph): coord_init = np.array([y_max - width, x_max - height]) / 2
-    return coord_init
+    if (transpose_graph): y_max, x_max = x_max, y_max
+    x_init, y_init = x_max - width, y_max - height
+    if dx_line == 0: x_init, y_init = x_max, y_max - height
+    return np.array([x_init, y_init])/2
 
 def splice_vector_into_pts(xy_init, xy_final, pts_per_line):
     result = np.linspace(xy_init, xy_final, pts_per_line)
@@ -103,18 +104,23 @@ def get_gcode_block(position, fillament_speed, height):
 def get_gcode_block_movement_only(position, filament_speed, height):
     return f"G0 F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
+def find_dx_line():
+    try: result = product_width / (num_groups * (line_per_group - 1) + ratio_of_dxgroup_dxline * (num_groups - 1))
+    except ZeroDivisionError: result = 0
+    return result
+
 
 ##################################################################################################################################################################################################
 
 def find_path():
-    global input_coordinate, z_list
+    global input_coordinate
 
-    coord_init = get_coordinate_init_centered(product_width, product_height)
-
-    dx_line = product_width / (num_groups * (line_per_group - 1) + ratio_of_dxgroup_dxline * (num_groups - 1))
+    dx_line = find_dx_line()
     dx_group = dx_line * ratio_of_dxgroup_dxline
     print(f"Distance between lines: {dx_line}mm")
     print(f"Distane between groups: {dx_group}mm")
+    
+    coord_init = get_coordinate_init_centered(product_width, product_height, dx_line, x_max, y_max)
 
     if use_flathead:
         dx_line = product_width / (num_groups + 1)
@@ -157,41 +163,35 @@ def find_path():
     input_coordinate = np.array(input_coordinate)
     if (transpose_graph):
         input_coordinate = np.flip(input_coordinate, 1)
-    
-    if(one_dir_printing): repition_modifier = 1/1.5
-    else: repition_modifier = 0.5
-    
-    z_list_length = len(input_coordinate)*repition_modifier*pts_per_line
-    z_list = np.zeros(int(z_list_length))
 
 
 ##################################################################################################################################################################################################
 
 def do_splice():
-    global spliced_coordinate, spliced_plot, z_list
+    global spliced_coordinate, spliced_plot
     spliced_plot.clear()
     spliced_coordinate = np.empty((1, 2))
-
+    
     if (one_dir_printing):
         units_to_skip = 3
     else:
         units_to_skip = 2
-
-    for set in range(0, len(input_coordinate) - (units_to_skip - 1), units_to_skip):
-        spliced_vector = splice_vector_into_pts(input_coordinate[set], input_coordinate[set + 1], int(pts_per_line))
-        spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
+    
+    for set in range(1, len(input_coordinate), 1):
+        if not one_dir_printing and set%units_to_skip != 0:
+            spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set], int(pts_per_line))
+            spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
+        #handles the drawing backwards part for one dir printing
+        if one_dir_printing:
+            if (set%units_to_skip != 0 and (set+1)%units_to_skip != 0 and set < len(input_coordinate)-1):
+                spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set],int(pts_per_line))
+                spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
+            else:
+                spliced_coordinate = np.append(spliced_coordinate, [input_coordinate[set]], axis=0)
         if use_flathead:
             draw_rect(set)
-        #handles the drawing backwards part for one dir printing
-        if (one_dir_printing and set != len(input_coordinate) - 1):
-            spliced_vector = splice_vector_into_pts(input_coordinate[set + 1], input_coordinate[set + 2],int(pts_per_line))
-            spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
-            z_list[set+2] = bed_dist+raise_height
-            if use_flathead:
-                draw_rect(set + 1)
-    
-    z_list[np.where(z_list==0)] = bed_dist
     spliced_coordinate = np.delete(spliced_coordinate, 0, 0)
+    print(spliced_coordinate)
 
 
 def calc_speeds():
@@ -200,14 +200,13 @@ def calc_speeds():
     v_list_length = (pts_per_line-1)*line_per_group*num_groups
     speed_corresponding_to_spliced_coord = np.linspace(nozzle_v_min, nozzle_v_max, v_list_length) * -1
     arr = speed_corresponding_to_spliced_coord
-    print(speed_corresponding_to_spliced_coord)
     #adds 0s whenever not printing
     count = 0
     for set in range(v_list_length + line_per_group*num_groups):
         if (set+1)%pts_per_line == 0:
             if(one_dir_printing):
-                arr = np.insert(arr, set+count, np.zeros(pts_per_line).flatten())
-                count += pts_per_line
+                arr = np.insert(arr, set+count, np.zeros(pts_per_line-1).flatten())
+                count += pts_per_line-1
             arr = np.insert(arr, set+count, np.zeros(1).flatten())
             count += 0
     speed_corresponding_to_spliced_coord = arr
@@ -311,10 +310,11 @@ def do_CTS():
     auto_fill(height, product_height)
     auto_fill(groups, num_groups)
     auto_fill(lpg, line_per_group)
+    auto_fill(v_nozzle, velocity_of_nozzle)
 
 ##################################################################################################################################################################################################
 def update_graph():
-    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, do_refresh, one_dir_printing, transpose_graph, start_in_reverse, list_of_boxes, graph
+    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, do_refresh, one_dir_printing, transpose_graph, start_in_reverse, list_of_boxes, graph, z_list
     
     undress_graph(graph)
     list_of_boxes.clear()
@@ -343,6 +343,13 @@ def update_graph():
     do_splice()
 
     calc_speeds()
+    
+    
+    z_list = np.zeros(len(spliced_coordinate)+1)
+    z_list.fill(bed_dist)
+    z_list[np.where(speed_corresponding_to_spliced_coord == 0)] == bed_dist+raise_height
+    z_list = np.delete(z_list, -1, 0)
+    print(z_list)
 
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
@@ -359,20 +366,20 @@ def update_graph():
         temp = spliced_coordinate[index-1:index+1]
         #checking if index has corresponding speed assigned to it
         try:
-            print(f"ACQUIRED FOR #{index}: {speed_corresponding_to_spliced_coord[index-1]}")
+            print(f"ACQUIRED FOR #{index-1} - #{index}: {speed_corresponding_to_spliced_coord[index-1]}")
         except:
-            print(f"MISSING FOR #{index}")
+            print(f"MISSING FOR #{index-1} - #{index}")
         #plotting segments: grey dashed is no printing
         if speed_corresponding_to_spliced_coord[index-1] == 0:
             spliced_plot.plot(temp[:, 0], temp[:, 1], color = "grey", ls = (0,(1,1)))
         else:
-            spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index-1],2)*-1)
+            spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index-1],2)*-1)    #FIX THE CONSTANT INDEX IN LABEL
     spliced_plot.set_position([0.1526641340346775, 0.187, 0.719671731930645, 0.6930000000000001])  # idk it just looks good on the gui
     legend = spliced_plot.legend(fontsize=3, loc='upper center', bbox_to_anchor=(0.5, 0), ncols=num_groups)
     # boxes
     for box in list_of_boxes:
         spliced_plot.add_patch(box)
-    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/15)   # the difference isnt that defined, just trying numbers here tbh
+    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/9)   # CHANGE 1 TO Z_LIST
     spliced_plot.set_title("Print Path")
     plt.tight_layout()
     
@@ -464,11 +471,11 @@ if len(file_name) > 1:
         f.write(f"\n\n\n{positioning}")
         f.write(f"\n{units}")
         f.write(f"\n{extrusion_type}")
-        f.write(f"\nG28 0\n\n")
+        f.write(f"\nG28\n\n")
 
         # nozzle stuff:
         if use_collagen:
-            f.write(f"\nM190 S38\n")
+            f.write(f"\nM140 S38\n")
         else:
             f.write(
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
