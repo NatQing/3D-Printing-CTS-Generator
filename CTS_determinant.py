@@ -40,7 +40,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 3    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 8    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
@@ -345,10 +345,8 @@ def update_graph():
     calc_speeds()
     
     
-    z_list = np.zeros(len(spliced_coordinate)+1)
+    z_list = np.zeros(len(spliced_coordinate))
     z_list.fill(bed_dist)
-    z_list[np.where(speed_corresponding_to_spliced_coord == 0)] == bed_dist+raise_height
-    z_list = np.delete(z_list, -1, 0)
     print(z_list)
 
     # Update the plot
@@ -373,13 +371,13 @@ def update_graph():
         if speed_corresponding_to_spliced_coord[index-1] == 0:
             spliced_plot.plot(temp[:, 0], temp[:, 1], color = "grey", ls = (0,(1,1)))
         else:
-            spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index-1],2)*-1)    #FIX THE CONSTANT INDEX IN LABEL
+            spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(speed_corresponding_to_spliced_coord[index-1],2)*-1)
     spliced_plot.set_position([0.1526641340346775, 0.187, 0.719671731930645, 0.6930000000000001])  # idk it just looks good on the gui
     legend = spliced_plot.legend(fontsize=3, loc='upper center', bbox_to_anchor=(0.5, 0), ncols=num_groups)
     # boxes
     for box in list_of_boxes:
         spliced_plot.add_patch(box)
-    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/9)   # CHANGE 1 TO Z_LIST
+    spliced_plot.scatter(x, y, s=20-pow(z_list,2)/9)
     spliced_plot.set_title("Print Path")
     plt.tight_layout()
     
