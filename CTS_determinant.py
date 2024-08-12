@@ -24,13 +24,13 @@ nozzle_temp = 230   # C probably depends on material...
 bed_temp = 35       # C sometimes will get stuck if above 40
 
 # platform limits(be aware that it could go over if inaccurate)
-x_max = 101  # mm
-y_max = 118  # mm
+x_max = 120  # mm
+y_max = 120  # mm
 
 # Line Settings: How wide and tall for the box of lines: in mm
 product_width = 50      # mm SHOULD NOT BE GREATER THAN X_MAX
 product_height = 40     # mm SHOULD NOT BE GREATER THAN Y_MAX
-num_groups = 5          # number of line groups - consecutive lines made with same speed
+num_groups = 2          # number of line groups - consecutive lines made with same speed
 line_per_group = 2      # mm gap between lines of the same line group
 ratio_of_dxgroup_dxline = 2  # ratio between distance between lines and distance between groups of lines so dxg/dxl
 
@@ -40,7 +40,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 8    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 3    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
@@ -83,7 +83,6 @@ def get_coordinate_init_centered(width, height, dx_line, x_max, y_max):
 def splice_vector_into_pts(xy_init, xy_final, pts_per_line):
     result = np.linspace(xy_init, xy_final, pts_per_line)
     return result
-
 
 def draw_rect(set):
     start = (input_coordinate[set][0] - flathead_nozzle_width / 2, input_coordinate[set][1])
@@ -170,24 +169,20 @@ def find_path():
 def do_splice():
     global spliced_coordinate, spliced_plot
     spliced_plot.clear()
-    spliced_coordinate = np.empty((1, 2))
+    spliced_coordinate = np.array([input_coordinate[0]])
+    print(spliced_coordinate)
     
+    units_to_skip = 2
     if (one_dir_printing):
         units_to_skip = 3
-    else:
-        units_to_skip = 2
     
-    for set in range(1, len(input_coordinate), 1):
-        if not one_dir_printing and set%units_to_skip != 0:
-            spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set], int(pts_per_line))
-            spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
-        #handles the drawing backwards part for one dir printing
+    for set in range(1, len(input_coordinate), units_to_skip):
+        spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set], int(pts_per_line))
+        spliced_coordinate = np.vstack((spliced_coordinate, spliced_vector))
+        
         if one_dir_printing:
-            if (set%units_to_skip != 0 and (set+1)%units_to_skip != 0 and set < len(input_coordinate)-1):
-                spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set],int(pts_per_line))
-                spliced_coordinate = np.concatenate((spliced_coordinate, spliced_vector), axis=0)
-            else:
-                spliced_coordinate = np.append(spliced_coordinate, [input_coordinate[set]], axis=0)
+            #skipping a step forward:
+            spliced_coordinate = np.vstack((spliced_coordinate, input_coordinate[set+1]))
         if use_flathead:
             draw_rect(set)
     spliced_coordinate = np.delete(spliced_coordinate, 0, 0)
@@ -195,23 +190,18 @@ def do_splice():
 
 
 def calc_speeds():
-    global speed_corresponding_to_spliced_coord
+    speed_corresponding_to_spliced_coord = []
     # create array for each point's speed
     v_list_length = (pts_per_line-1)*line_per_group*num_groups
-    speed_corresponding_to_spliced_coord = np.linspace(nozzle_v_min, nozzle_v_max, v_list_length) * -1
-    arr = speed_corresponding_to_spliced_coord
-    #adds 0s whenever not printing
-    count = 0
-    for set in range(v_list_length + line_per_group*num_groups):
-        if (set+1)%pts_per_line == 0:
-            if(one_dir_printing):
-                arr = np.insert(arr, set+count, np.zeros(pts_per_line-1).flatten())
-                count += pts_per_line-1
-            arr = np.insert(arr, set+count, np.zeros(1).flatten())
-            count += 0
-    speed_corresponding_to_spliced_coord = arr
-
-    #print(f"Material Usage: {(nozzle_v_max - nozzle_v_min) * mm_stepper_per_ml_syringe}mL")
+    speed_distribution = np.linspace(nozzle_v_min, nozzle_v_max, v_list_length) * -1
+    if len(speed_distribution) == len(spliced_coordinate): return speed_distribution
+    for lines in range(0,line_per_group*num_groups):
+        new_segment = speed_distribution[lines*(pts_per_line-1):(lines+1)*(pts_per_line-1)].tolist()
+        if one_dir_printing:
+            new_segment.append(0)
+        new_segment.append(0)
+        speed_corresponding_to_spliced_coord = np.append(speed_corresponding_to_spliced_coord, new_segment, 0)
+    return speed_corresponding_to_spliced_coord
 
 ###GUI stuff mostly
 
@@ -262,15 +252,40 @@ def undress_graph(graph):
 
 
 def auto_fill(widget, text):
-    widget.delete(0, END)
-    widget.insert(0, text)
+    try:
+        widget.delete(0, END)
+        widget.insert(0, text)
+        return True
+    except:
+        return False
 
+def upload_entries():
+    global product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle
+    try:
+        product_width = float(width.get())
+        product_height = float(height.get())
+        num_groups = int(groups.get())
+        line_per_group = int(lpg.get())
+        nozzle_v_min = float(v_min.get())
+        nozzle_v_max = float(v_max.get())
+        velocity_of_nozzle = float(v_nozzle.get())
+    except ValueError:
+        print("Error in Values")
+
+def upload_bools():
+    global use_flathead, use_collagen, one_dir_printing, transpose_graph, start_in_reverse
+    use_collagen = collagen_mode.get()
+    use_flathead = flathead_mode.get()
+    one_dir_printing = one_dir_mode.get()
+    transpose_graph = transpose_mode.get()
+    start_in_reverse = reverse_start_mode.get()
 
 def refresh():
     global use_flathead, use_collagen, do_refresh
     if do_refresh == False or var.get() > 200: return
-    
     var.set(var.get() +1)
+    
+    upload_bools()
     
     if (flathead_mode.get()):
         auto_fill(lpg, 1)
@@ -281,24 +296,9 @@ def refresh():
     root.after(500, refresh)
 
 
-def upload_settings():
-    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, one_dir_printing, transpose_graph, start_in_reverse, do_refresh
-    try:
-        product_width = float(width.get())
-        product_height = float(height.get())
-        num_groups = int(groups.get())
-        line_per_group = int(lpg.get())
-        nozzle_v_min = float(v_min.get())
-        nozzle_v_max = float(v_max.get())
-        velocity_of_nozzle = float(v_nozzle.get())
-        use_collagen = collagen_mode.get()
-        use_flathead = flathead_mode.get()
-        one_dir_printing = one_dir_mode.get()
-        transpose_graph = transpose_mode.get()
-        start_in_reverse = reverse_start_mode.get()
-    except ValueError:
-        print("Error in Values")
-
+def send_print():
+    global do_refresh
+    upload_entries()
     do_refresh = 0
     root.quit()
     root.destroy()
@@ -311,29 +311,17 @@ def do_CTS():
     auto_fill(groups, num_groups)
     auto_fill(lpg, line_per_group)
     auto_fill(v_nozzle, velocity_of_nozzle)
+    auto_fill(v_max, nozzle_v_max)
+    auto_fill(v_min, nozzle_v_min)
 
 ##################################################################################################################################################################################################
 def update_graph():
-    global use_flathead, use_collagen, product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle, do_refresh, one_dir_printing, transpose_graph, start_in_reverse, list_of_boxes, graph, z_list
+    global do_refresh, list_of_boxes, graph, z_list, speed_corresponding_to_spliced_coord
     
     undress_graph(graph)
     list_of_boxes.clear()
 
-    try:
-        product_width = float(width.get())
-        product_height = float(height.get())
-        num_groups = int(groups.get())
-        line_per_group = int(lpg.get())
-        nozzle_v_min = float(v_min.get())
-        nozzle_v_max = float(v_max.get())
-        velocity_of_nozzle = float(v_nozzle.get())
-        use_collagen = collagen_mode.get()
-        use_flathead = flathead_mode.get()
-        one_dir_printing = one_dir_mode.get()
-        transpose_graph = transpose_mode.get()
-        start_in_reverse = reverse_start_mode.get()
-    except ValueError:
-        print("Error in Values")
+    upload_entries()
 
     # Clear the previous plot
 
@@ -342,12 +330,11 @@ def update_graph():
 
     do_splice()
 
-    calc_speeds()
+    speed_corresponding_to_spliced_coord = calc_speeds()
     
     
     z_list = np.zeros(len(spliced_coordinate))
     z_list.fill(bed_dist)
-    print(z_list)
 
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
@@ -435,7 +422,7 @@ v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]]: ")
 v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/s]: ")
 cts_button = make_button(left_frame, "Do CTS", do_CTS)
 update_graph = make_button(left_frame, "Update Graph", update_graph)
-create_button = make_button(left_frame, "Write File", upload_settings)
+create_button = make_button(left_frame, "Write File", send_print)
 
 refresh()
 
@@ -479,7 +466,10 @@ if len(file_name) > 1:
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
             f.write(f"M190 S{bed_temp}\n\n")
         for i in range(len(spliced_coordinate)):
-            line = get_gcode_block(spliced_coordinate[i], speed_corresponding_to_spliced_coord[i], z_list[i])
+            coordinate = spliced_coordinate[i]
+            speed = speed_corresponding_to_spliced_coord[i-1]
+            elevation = z_list[i]
+            line = get_gcode_block(coordinate, speed, elevation)
             f.write(f"\n{line}")
 
         # ending code here
