@@ -12,6 +12,7 @@ from matplotlib.patches import Rectangle
 
 # constants:##################################################################################################################################################################################################
 # too lazy to change all vars into capital globals :/
+#VAR PREWRITTEN FOR CTS
 HOME = 'G28'            # this is a custom saved location
 positioning = 'G90'     # absolute positioning
 units = 'G21'           # everything using mm
@@ -54,11 +55,12 @@ raise_height = 4    # mm
 
 flathead_nozzle_width = 10  # mm
 
+#these were for resource usage calc. not Used
 mm_to_ml_constant = 48
 gear_ratio_constant = -1  # mm/mm changed settings in printer.cfg
 cylinder_length_per_volume = 5.53  # obtain from measuring distance between syringe indents mm/ml
 mm_stepper_per_ml_syringe = cylinder_length_per_volume / gear_ratio_constant  # mm_stepper/ml_syringe
-print(mm_stepper_per_ml_syringe*0.25)
+
 
 use_collagen = 0
 use_flathead = 0
@@ -98,8 +100,8 @@ def draw_rect(set):
 
 
 # gcode writer that will combine coordinate information and speed information
-def get_gcode_block(position, fillament_speed, height):
-    return f"G1 E{fillament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
+def get_gcode_block(position, filament_speed, height):
+    return f"G1 E{filament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
 def get_gcode_block_movement_only(position, filament_speed, height):
     return f"G0 F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
@@ -418,8 +420,8 @@ width = make_entry(left_frame, "Product Width[mm]: ")
 height = make_entry(left_frame, "Product Height[mm]: ")
 groups = make_entry(left_frame, "Number of Groups: ")
 lpg = make_entry(left_frame, "Number of Lines/Group: ")
-v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/min]: ")
-v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/min]]: ")
+v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/s]: ")
+v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]]: ")
 v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/min]: ")
 cts_button = make_button(left_frame, "Do CTS", do_CTS)
 update_graph = make_button(left_frame, "Update Graph", update_graph)
@@ -461,7 +463,7 @@ if len(file_name) > 1:
 
         # nozzle stuff:
         if use_collagen:
-            f.write(f"\nM140 S38\n")
+            f.write(f"\nM140 S38\n")    #BED TEMP
         else:
             f.write(
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
