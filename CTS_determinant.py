@@ -21,7 +21,7 @@ extrusion_type = 'M83'  # Relative is good for speed; M82 Abs is good for settin
 material = 'PCL'    # purely informational, does not affect printer function
 printer = 'Voron'   # purely informational
 nozzle_temp = 230   # C probably depends on material...
-bed_temp = 35       # C sometimes will get stuck if above 40
+bed_temp = 40       # C, target is 37C but water dissipates some
 
 # platform limits(be aware that it could go over if inaccurate)
 x_max = 120  # mm
@@ -40,7 +40,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 3    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 4    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 nozzle_v_min = 0.2  # mm/min
@@ -49,7 +49,7 @@ nozzle_v_cap = 50   # mm/min
 
 velocity_of_nozzle = 600  # mm/min
 velocity_of_nozzle_cap = 800  # mm/min
-bed_dist = 6       # mm
+bed_dist = 5       # mm
 raise_height = 4    # mm
 
 flathead_nozzle_width = 10  # mm
@@ -58,6 +58,7 @@ mm_to_ml_constant = 48
 gear_ratio_constant = -1  # mm/mm changed settings in printer.cfg
 cylinder_length_per_volume = 5.53  # obtain from measuring distance between syringe indents mm/ml
 mm_stepper_per_ml_syringe = cylinder_length_per_volume / gear_ratio_constant  # mm_stepper/ml_syringe
+print(mm_stepper_per_ml_syringe*0.25)
 
 use_collagen = 0
 use_flathead = 0
@@ -417,9 +418,9 @@ width = make_entry(left_frame, "Product Width[mm]: ")
 height = make_entry(left_frame, "Product Height[mm]: ")
 groups = make_entry(left_frame, "Number of Groups: ")
 lpg = make_entry(left_frame, "Number of Lines/Group: ")
-v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/s]: ")
-v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]]: ")
-v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/s]: ")
+v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/min]: ")
+v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/min]]: ")
+v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/min]: ")
 cts_button = make_button(left_frame, "Do CTS", do_CTS)
 update_graph = make_button(left_frame, "Update Graph", update_graph)
 create_button = make_button(left_frame, "Write File", send_print)
