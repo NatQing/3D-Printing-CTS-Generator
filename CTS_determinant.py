@@ -44,8 +44,8 @@ transpose_graph = 0
 pts_per_line = 4    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
-nozzle_v_min = 0.2  # mm/min
-nozzle_v_max = 1    # mm/min
+extrude_vmin = 0.2  # mm/min
+extrude_vmax = 1    # mm/min
 nozzle_v_cap = 50   # mm/min
 
 velocity_of_nozzle = 600  # mm/min
@@ -196,7 +196,7 @@ def calc_speeds():
     speed_corresponding_to_spliced_coord = []
     # create array for each point's speed
     v_list_length = (pts_per_line-1)*line_per_group*num_groups
-    speed_distribution = np.linspace(nozzle_v_min, nozzle_v_max, v_list_length) * -1
+    speed_distribution = np.linspace(extrude_vmin, extrude_vmax, v_list_length) * -1
     if len(speed_distribution) == len(spliced_coordinate): return speed_distribution
     for lines in range(0,line_per_group*num_groups):
         new_segment = speed_distribution[lines*(pts_per_line-1):(lines+1)*(pts_per_line-1)].tolist()
@@ -263,14 +263,14 @@ def auto_fill(widget, text):
         return False
 
 def upload_entries():
-    global product_width, product_height, num_groups, line_per_group, nozzle_v_min, nozzle_v_max, velocity_of_nozzle
+    global product_width, product_height, num_groups, line_per_group, extrude_vmin, extrude_vmax, velocity_of_nozzle
     try:
         product_width = float(width.get())
         product_height = float(height.get())
         num_groups = int(groups.get())
         line_per_group = int(lpg.get())
-        nozzle_v_min = float(v_min.get())
-        nozzle_v_max = float(v_max.get())
+        extrude_vmin = float(v_min.get())
+        extrude_vmax = float(v_max.get())
         velocity_of_nozzle = float(v_nozzle.get())
     except ValueError:
         print("Error in Values")
@@ -314,8 +314,8 @@ def do_CTS():
     auto_fill(groups, num_groups)
     auto_fill(lpg, line_per_group)
     auto_fill(v_nozzle, velocity_of_nozzle)
-    auto_fill(v_max, nozzle_v_max)
-    auto_fill(v_min, nozzle_v_min)
+    auto_fill(v_max, extrude_vmax)
+    auto_fill(v_min, extrude_vmin)
 
 ##################################################################################################################################################################################################
 def update_graph():
@@ -453,7 +453,7 @@ if len(file_name) > 1:
         f.write(f"\nIntended Material: {material}")
         f.write("\n;dimension of product: " + str(product_width) + "x" + str(product_height) + " mm")
         f.write("\n;details of product: " + str(num_groups) + " groups of " + str(line_per_group) + " lines each")
-        f.write("\n;speed increment: " + str(nozzle_v_min) + " to " + str(nozzle_v_max) + " mm/min for " + str(
+        f.write("\n;speed increment: " + str(extrude_vmin) + " to " + str(extrude_vmax) + " mm/min for " + str(
             len(speed_corresponding_to_spliced_coord)) + " pts total")
         # set up
         f.write(f"\n\n\n{positioning}")
