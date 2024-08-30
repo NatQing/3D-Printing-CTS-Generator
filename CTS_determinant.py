@@ -26,7 +26,7 @@ bed_temp = 40       # C, target is 37C but water dissipates some
 
 # platform limits(be aware that it could go over if inaccurate)
 x_max = 120  # mm
-y_max = 120  # mm
+y_max = 120-50  # mm    accounting for displacement of needle
 
 # Line Settings: How wide and tall for the box of lines: in mm
 product_width = 50      # mm SHOULD NOT BE GREATER THAN X_MAX
@@ -41,7 +41,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 4    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 5    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 extrude_vmin = 0.2  # mm/min
@@ -88,13 +88,13 @@ def splice_vector_into_pts(xy_init, xy_final, pts_per_line):
     return result
 
 def draw_rect(set):
-    start = (input_coordinate[set][0] - flathead_nozzle_width / 2, input_coordinate[set][1])
+    start = (input_coordinate[set-1][0] - flathead_nozzle_width / 2, input_coordinate[set-1][1])
     width = (flathead_nozzle_width)
-    height = (input_coordinate[set + 1][1] - input_coordinate[set][1])
+    height = (input_coordinate[set][1] - input_coordinate[set-1][1])
     if (transpose_graph):
-        start = (input_coordinate[set][0], input_coordinate[set][1] - flathead_nozzle_width / 2)
+        start = (input_coordinate[set-1][0], input_coordinate[set-1][1] - flathead_nozzle_width / 2)
         height = width
-        width = (input_coordinate[set + 1][0] - input_coordinate[set][0])
+        width = (input_coordinate[set][0] - input_coordinate[set-1][0])
     box = Rectangle(start, width, height, facecolor="none", edgecolor="red")
     list_of_boxes.append(box)
 
@@ -102,6 +102,13 @@ def draw_rect(set):
 # gcode writer that will combine coordinate information and speed information
 def get_gcode_block(position, filament_speed, height):
     return f"G1 E{filament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
+
+def get_gcode_block_flow_test(position, filament_speed, height):
+    out_rate_constant = -17.945/0.134*60     #taken from flowrate spreadsheet
+    nozzle_velocity = out_rate_constant*filament_speed
+    if filament_speed == 0:
+        nozzle_velocity = velocity_of_nozzle
+    return f"G1 E{filament_speed} F{nozzle_velocity} X{position[0]} Y{position[1]} Z{height}"
 
 def get_gcode_block_movement_only(position, filament_speed, height):
     return f"G0 F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
@@ -335,9 +342,11 @@ def update_graph():
 
     speed_corresponding_to_spliced_coord = calc_speeds()
     
-    
+    #z height for line segments, corners added later
     z_list = np.zeros(len(spliced_coordinate))
     z_list.fill(bed_dist)
+    ignore_indexes = np.argwhere(speed_corresponding_to_spliced_coord == 0)
+    z_list[ignore_indexes] = bed_dist+raise_height
 
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
@@ -416,8 +425,8 @@ use_flathead = make_check(left_frame, "Use Flathead Nozzle", flathead_mode)
 use_transpose = make_check(left_frame, "Transpose Graph", transpose_mode)
 use_one_dir = make_check(left_frame, "Only print in one Direction", one_dir_mode)
 use_start_reverse = make_check(left_frame, "Start in reversed Y", reverse_start_mode)
-width = make_entry(left_frame, "Product Width[mm]: ")
-height = make_entry(left_frame, "Product Height[mm]: ")
+width = make_entry(left_frame, f"Product Width(<{x_max})[mm]: ")
+height = make_entry(left_frame, f"Product Height(<{y_max})[mm]: ")
 groups = make_entry(left_frame, "Number of Groups: ")
 lpg = make_entry(left_frame, "Number of Lines/Group: ")
 v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/s]: ")
@@ -442,6 +451,7 @@ if use_flathead:
     nozzle = "flathead"
 else:
     nozzle = "needle"
+
 
 file_name = f"File_{material}_{nozzle}"
 if len(file_name) > 1:
@@ -470,9 +480,17 @@ if len(file_name) > 1:
             f.write(f"M190 S{bed_temp}\n\n")
         for i in range(len(spliced_coordinate)):
             coordinate = spliced_coordinate[i]
-            speed = speed_corresponding_to_spliced_coord[i-1]
+            extrusion_speed = speed_corresponding_to_spliced_coord[i-1]
             elevation = z_list[i]
-            line = get_gcode_block(coordinate, speed, elevation)
+            
+            #added for more punctual raise and lowering - need to test
+            """if i < len(spliced_coordinate)-1 and extrusion_speed == 0:
+                    extra_line = get_gcode_block_flow_test(spliced_coordinate[i-1], extrusion_speed, elevation)
+                    f.write(f"\n{extra_line}")
+                    extra_line = get_gcode_block_flow_test(spliced_coordinate[i+1], extrusion_speed, elevation)
+                    f.write(f"\n{extra_line}")"""
+            
+            line = get_gcode_block_flow_test(coordinate, extrusion_speed, elevation)  #change back to regular gcode_block after testing
             f.write(f"\n{line}")
 
         # ending code here
