@@ -41,7 +41,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 2    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 5    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 extrude_vmin = 0.335936214  # mm/min
@@ -60,8 +60,9 @@ printer_y_offset = 32   #for 30 degree angled collagen nozzle
 #these were for resource usage calc. not Used
 mm_to_ml_constant = 48
 gear_ratio_constant = -1  # mm/mm changed settings in printer.cfg
-cylinder_length_per_volume = 5.53  # obtain from measuring distance between syringe indents mm/ml
+cylinder_length_per_volume = 5.57  # obtain from measuring distance between syringe indents mm/ml
 mm_stepper_per_ml_syringe = cylinder_length_per_volume / gear_ratio_constant  # mm_stepper/ml_syringe
+mm_syringe_ratio = 134  #mm syringe to mm needle
 
 use_collagen = 0
 use_flathead = 0
@@ -210,7 +211,7 @@ def calc_speeds(spliced_coordinate):
             new_segment.append(0)
         new_segment.append(0)
         speed_corresponding_to_spliced_coord = np.append(speed_corresponding_to_spliced_coord, new_segment, 0)
-    return speed_corresponding_to_spliced_coord
+    return speed_corresponding_to_spliced_coord/mm_syringe_ratio
 
 ###GUI stuff mostly
 
@@ -335,6 +336,7 @@ def update_graph():
 
     # recalculate
     input_coordinate = find_path()
+    print(input_coordinate)
 
     spliced_coordinate,list_of_boxes = do_splice(input_coordinate)
 
@@ -356,9 +358,10 @@ def update_graph():
     final_coordinate = np.empty((0,4))
     for i,coordinate in enumerate(sub):
         final_coordinate = np.append(final_coordinate, [coordinate], axis=0)
-        if i < len(sub)-1 and coordinate[3] != 0:
+        if i < len(sub)-1 and any(np.all(coordinate[0:2] == row) for row in input_coordinate) and coordinate[3] != 0:
             final_coordinate = np.append(final_coordinate, [sub[i]+[0,0,raise_height,-speed_corresponding_to_spliced_coord[1]]], axis=0)
             final_coordinate = np.append(final_coordinate, [sub[i+1]+[0,0,raise_height,0]], axis=0)
+    print(final_coordinate)
     
     x = final_coordinate[:, 0]
     y = final_coordinate[:, 1]
@@ -377,8 +380,8 @@ def update_graph():
             print(f"ACQUIRED FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}: {v[index]}")
         except:
             print(f"MISSING FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}")
-        #plotting segments: grey dashed is no printing
-        if v[index] == 0:
+        #plotting segments: grey dashed is no printing: if extrude nothing or is a vertical movement
+        if v[index] == 0 or (np.subtract((x[index-1], y[index-1]),(x[index], y[index])) == 0).all():
             spliced_plot.plot(temp[:, 0], temp[:, 1], color = "grey", ls = (0,(1,1)))
         else:
             spliced_plot.plot(temp[:, 0], temp[:, 1], label=round(v[index],2)*-1)
