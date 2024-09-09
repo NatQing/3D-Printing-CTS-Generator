@@ -41,7 +41,7 @@ start_in_reverse = 0
 transpose_graph = 0
 
 # for incrementing pts only:
-pts_per_line = 5    # mm Choose 1mm if you want each whole line representing one speed.
+pts_per_line = 2    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
 extrude_vmin = 0.335936214  # mm/min
@@ -131,10 +131,10 @@ def find_path():
 
     if use_flathead:
         dx_line = product_width / (num_groups + 1)
-    if (flathead_nozzle_width > dx_line):
-        print("Potential Overlap Detected!")
-    else:
-        print("No Overlap Detected!")
+        if (flathead_nozzle_width > dx_line):
+            print("Potential Overlap Detected!")
+        else:
+            print("No Overlap Detected!")
 
     if (start_in_reverse):
         input_coordinate.append((coord_init[0], coord_init[1] + product_height))
@@ -270,12 +270,13 @@ def auto_fill(widget, text):
         return False
 
 def upload_entries():
-    global product_width, product_height, num_groups, line_per_group, extrude_vmin, extrude_vmax, velocity_of_nozzle
+    global product_width, product_height, num_groups, line_per_group, pts_per_line, extrude_vmin, extrude_vmax, velocity_of_nozzle
     try:
         product_width = float(width.get())
         product_height = float(height.get())
         num_groups = int(groups.get())
         line_per_group = int(lpg.get())
+        pts_per_line = int(ppl.get())+1
         extrude_vmin = float(v_min.get())
         extrude_vmax = float(v_max.get())
         velocity_of_nozzle = float(v_nozzle.get())
@@ -320,6 +321,7 @@ def do_CTS():
     auto_fill(height, product_height)
     auto_fill(groups, num_groups)
     auto_fill(lpg, line_per_group)
+    auto_fill(ppl, pts_per_line-1)
     auto_fill(v_nozzle, velocity_of_nozzle)
     auto_fill(v_max, extrude_vmax)
     auto_fill(v_min, extrude_vmin)
@@ -349,11 +351,7 @@ def update_graph():
     z_list.fill(bed_dist)
     #merging x,y with z arrays to form x,y,z array
     speed_corresponding_to_spliced_coord = np.insert(speed_corresponding_to_spliced_coord[:-1], 0, 0)
-    #lift_pts = np.argwhere(speed_corresponding_to_spliced_coord != 0).flatten()[:-1]
-    #drop_pts = np.argwhere(speed_corresponding_to_spliced_coord == 0).flatten()[1:]
     sub = np.concatenate((spliced_coordinate, z_list, np.atleast_2d(speed_corresponding_to_spliced_coord).T), axis=1)
-    #lift = final_coordinate[lift_pts] + [0,0,raise_height,-speed_corresponding_to_spliced_coord[1]]
-    #drop = final_coordinate[drop_pts] + [0,0,raise_height,0]
 
     final_coordinate = np.empty((0,4))
     for i,coordinate in enumerate(sub):
@@ -361,7 +359,6 @@ def update_graph():
         if i < len(sub)-1 and any(np.all(coordinate[0:2] == row) for row in input_coordinate) and coordinate[3] != 0:
             final_coordinate = np.append(final_coordinate, [sub[i]+[0,0,raise_height,-speed_corresponding_to_spliced_coord[1]]], axis=0)
             final_coordinate = np.append(final_coordinate, [sub[i+1]+[0,0,raise_height,0]], axis=0)
-    print(final_coordinate)
     
     x = final_coordinate[:, 0]
     y = final_coordinate[:, 1]
@@ -445,9 +442,10 @@ width = make_entry(left_frame, f"Product Width(<{x_max})[mm]: ")
 height = make_entry(left_frame, f"Product Height(<{y_max})[mm]: ")
 groups = make_entry(left_frame, "Number of Groups: ")
 lpg = make_entry(left_frame, "Number of Lines/Group: ")
+ppl = make_entry(left_frame, "Segments per Line: ")
 v_min = make_entry(left_frame, "Minimum Extrusion Speed[mm/s]: ")
-v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]]: ")
-v_nozzle = make_entry(left_frame, "Nozzle Movement Speed[mm/min]: ")
+v_max = make_entry(left_frame, "Maximum Extrusion Speed[mm/s]: ")
+v_nozzle = make_entry(left_frame, "Nozzle Speed for Sheer Test[mm/min]: ")
 cts_button = make_button(left_frame, "Do CTS", do_CTS)
 update_graph_button = make_button(left_frame, "Update Graph", update_graph)
 create_button = make_button(left_frame, "Write File", send_print)
@@ -495,9 +493,12 @@ if len(file_name) > 1:
                 f"\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET={nozzle_temp}\nTEMPERATURE_WAIT SENSOR=extruder MINIMUM={nozzle_temp} MAXIMUM={nozzle_temp + 10}\n")
             f.write(f"M190 S{bed_temp}\n\n")
         
-        coordinate = [[x,y+printer_y_offset] for [x,y] in final_coordinate[:,0:2]]
-        extrusion_speed = final_coordinate[:,3]
-        elevation = final_coordinate[:,2]
+        try:
+            coordinate = [[x,y+printer_y_offset] for [x,y] in final_coordinate[:,0:2]]
+            extrusion_speed = final_coordinate[:,3]
+            elevation = final_coordinate[:,2]
+        except TypeError:
+            print("No input")
         for i in range(len(final_coordinate)):
             line = get_gcode_block(coordinate[i], extrusion_speed[i], elevation[i])  #change back to regular gcode_block after testing
             f.write(f"\n{line}")
