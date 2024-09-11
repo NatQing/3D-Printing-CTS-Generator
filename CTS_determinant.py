@@ -50,8 +50,8 @@ nozzle_v_cap = 50   # mm/min
 
 velocity_of_nozzle = 1004.7  # mm/min
 velocity_of_nozzle_cap = 6100  # mm/min
-bed_dist = 5       # mm
-raise_height = 10    # mm
+printing_height = 5       # mm
+raise_height = 10    # mm The difference between normal printing height and raised height, so printing_height+raise_height=actual_raised_height
 
 flathead_nozzle_width = 10  # mm
 
@@ -351,8 +351,8 @@ def update_graph():
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
     #z height for line segments, corners added later
-    z_list = np.zeros((len(spliced_coordinate), 1)) + bed_dist
-    z_list.fill(bed_dist)
+    z_list = np.zeros((len(spliced_coordinate), 1)) + printing_height
+    z_list.fill(printing_height)
     #merging x,y with z arrays to form x,y,z array
     speed_corresponding_to_spliced_coord = np.insert(speed_corresponding_to_spliced_coord[:-1], 0, 0)
     sub = np.concatenate((spliced_coordinate, z_list, np.atleast_2d(speed_corresponding_to_spliced_coord).T), axis=1)
@@ -365,9 +365,9 @@ def update_graph():
             final_coordinate = np.append(final_coordinate, [coordinate], axis=0)
         skip_key = 0
         if i < len(sub)-1 and any(np.all(coordinate[0:2] == row) for row in input_coordinate) and coordinate[3] != 0:
-            print(np.array([sub[i][0],sub[i][1],bed_dist+raise_height,0]))
-            final_coordinate = np.append(final_coordinate, np.array([[sub[i][0],sub[i][1],bed_dist+raise_height,0]]), axis=0)
-            final_coordinate = np.append(final_coordinate, np.array([[sub[i+1][0],sub[i+1][1],bed_dist+raise_height,0]]), axis=0)
+            print(np.array([sub[i][0],sub[i][1],printing_height+raise_height,0]))
+            final_coordinate = np.append(final_coordinate, np.array([[sub[i][0],sub[i][1],printing_height+raise_height,0]]), axis=0)
+            final_coordinate = np.append(final_coordinate, np.array([[sub[i+1][0],sub[i+1][1],printing_height+raise_height,0]]), axis=0)
             if one_dir_printing: skip_key = 1
     print("END")
     print(final_coordinate)
