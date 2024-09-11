@@ -32,7 +32,7 @@ y_max = 120  # mm    accounting for displacement of needle
 product_width = 50      # mm SHOULD NOT BE GREATER THAN X_MAX
 product_height = 45     # mm SHOULD NOT BE GREATER THAN Y_MAX
 num_groups = 1          # number of line groups - consecutive lines made with same speed
-line_per_group = 1      # mm gap between lines of the same line group
+line_per_group = 5      # mm gap between lines of the same line group
 ratio_of_dxgroup_dxline = 2  # ratio between distance between lines and distance between groups of lines so dxg/dxl
 
 # one dir printing doesnt rly work since it adds new points to traverse. :/
@@ -44,14 +44,14 @@ transpose_graph = 0
 pts_per_line = 2    # mm Choose 1mm if you want each whole line representing one speed.
 
 # testing all feeding speeds within range:
-extrude_vmin = 0.335936214  # mm/min
-extrude_vmax = 0.335936214    # mm/min
+extrude_vmin = 0.075  # mm/min
+extrude_vmax = 0.175    # mm/min
 nozzle_v_cap = 50   # mm/min
 
-velocity_of_nozzle = 600  # mm/min
+velocity_of_nozzle = 1004.7  # mm/min
 velocity_of_nozzle_cap = 6100  # mm/min
 bed_dist = 5       # mm
-raise_height = 4    # mm
+raise_height = 10    # mm
 
 flathead_nozzle_width = 10  # mm
 
@@ -203,7 +203,11 @@ def calc_speeds(spliced_coordinate):
     speed_corresponding_to_spliced_coord = []
     # create array for each point's speed
     v_list_length = (pts_per_line-1)*line_per_group*num_groups
-    speed_distribution = np.linspace(extrude_vmin, extrude_vmax, v_list_length) * -1
+    #convert extrusion rate to extrude distance
+    extrude_dist_min = extrude_vmin*product_height/(velocity_of_nozzle/60)
+    extrude_dist_max = extrude_vmax*product_height/(velocity_of_nozzle/60)
+    #continue
+    speed_distribution = np.linspace(extrude_dist_min, extrude_dist_max, v_list_length) * -1
     if len(speed_distribution) == len(spliced_coordinate): return speed_distribution
     for lines in range(0,line_per_group*num_groups):
         new_segment = speed_distribution[lines*(pts_per_line-1):(lines+1)*(pts_per_line-1)].tolist()
@@ -211,7 +215,7 @@ def calc_speeds(spliced_coordinate):
             new_segment.append(0)
         new_segment.append(0)
         speed_corresponding_to_spliced_coord = np.append(speed_corresponding_to_spliced_coord, new_segment, 0)
-    return speed_corresponding_to_spliced_coord/mm_syringe_ratio
+    return speed_corresponding_to_spliced_coord
 
 ###GUI stuff mostly
 
@@ -352,13 +356,22 @@ def update_graph():
     #merging x,y with z arrays to form x,y,z array
     speed_corresponding_to_spliced_coord = np.insert(speed_corresponding_to_spliced_coord[:-1], 0, 0)
     sub = np.concatenate((spliced_coordinate, z_list, np.atleast_2d(speed_corresponding_to_spliced_coord).T), axis=1)
-
+    
+    print(sub)
+    skip_key = 0    #bandage fix for raise mechanic in onedirprinting
     final_coordinate = np.empty((0,4))
     for i,coordinate in enumerate(sub):
-        final_coordinate = np.append(final_coordinate, [coordinate], axis=0)
+        if skip_key == 0:
+            final_coordinate = np.append(final_coordinate, [coordinate], axis=0)
+        skip_key = 0
         if i < len(sub)-1 and any(np.all(coordinate[0:2] == row) for row in input_coordinate) and coordinate[3] != 0:
-            final_coordinate = np.append(final_coordinate, [sub[i]+[0,0,raise_height,-speed_corresponding_to_spliced_coord[1]]], axis=0)
-            final_coordinate = np.append(final_coordinate, [sub[i+1]+[0,0,raise_height,0]], axis=0)
+            print(np.array([sub[i][0],sub[i][1],bed_dist+raise_height,0]))
+            final_coordinate = np.append(final_coordinate, np.array([[sub[i][0],sub[i][1],bed_dist+raise_height,0]]), axis=0)
+            final_coordinate = np.append(final_coordinate, np.array([[sub[i+1][0],sub[i+1][1],bed_dist+raise_height,0]]), axis=0)
+            if one_dir_printing: skip_key = 1
+    print("END")
+    print(final_coordinate)
+                
     
     x = final_coordinate[:, 0]
     y = final_coordinate[:, 1]
