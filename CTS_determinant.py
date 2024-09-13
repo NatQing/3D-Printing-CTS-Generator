@@ -85,30 +85,23 @@ def splice_vector_into_pts(xy_init, xy_final, pts_per_line):
     result = np.linspace(xy_init, xy_final, pts_per_line)
     return result
 
-def draw_rect(set, input_coordinate, list_of_boxes):
-    start = (input_coordinate[set-1][0] - flathead_nozzle_width / 2, input_coordinate[set-1][1])
+def draw_rect(set, coordinates, list_of_boxes):
+    start = (coordinates[set-1][0]-flathead_nozzle_width/2, coordinates[set-1][1])
     width = (flathead_nozzle_width)
-    height = (input_coordinate[set][1] - input_coordinate[set-1][1])
+    height = (coordinates[set][1]-coordinates[set-1][1])
     if (transpose_graph):
-        start = (input_coordinate[set-1][0], input_coordinate[set-1][1] - flathead_nozzle_width / 2)
+        start = (coordinates[set-1][0], coordinates[set-1][1]-flathead_nozzle_width/2)
         height = width
-        width = (input_coordinate[set][0] - input_coordinate[set-1][0])
+        width = (coordinates[set][0]-coordinates[set-1][0])
     box = Rectangle(start, width, height, facecolor="none", edgecolor="red")
-    list_of_boxes.append(box)
+    return box
 
 
 # gcode writer that will combine coordinate information and speed information
-def get_gcode_block(position, filament_speed, height):
-    return f"G1 E{filament_speed} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
+def get_gcode_block(position, extrusion_distance, height):
+    return f"G1 E{extrusion_distance} F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
-def get_gcode_block_flow_test(position, filament_speed, height):
-    out_rate_constant = -17.945/0.134*60     #taken from flowrate spreadsheet
-    nozzle_velocity = out_rate_constant*filament_speed
-    if filament_speed == 0:
-        nozzle_velocity = velocity_of_nozzle
-    return f"G1 E{filament_speed} F{nozzle_velocity} X{position[0]} Y{position[1]} Z{height}"
-
-def get_gcode_block_movement_only(position, filament_speed, height):
+def get_gcode_block_movement_only(position, extrusion_distance, height):
     return f"G0 F{velocity_of_nozzle} X{position[0]} Y{position[1]} Z{height}"
 
 def find_dx_line():
@@ -125,8 +118,11 @@ def find_path():
     dx_line = find_dx_line()
     dx_group = dx_line * ratio_of_dxgroup_dxline
     print(f"Distance between lines: {dx_line}mm")
-    print(f"Distane between groups: {dx_group}mm")
+    print(f"Distane between groups: {dx_group}mm, ignore if only 1 group")
     
+    if(product_height > y_max or product_width > x_max):
+        print("Invalid Dimensions, retry")
+        return
     coord_init = get_coordinate_init_centered(product_width, product_height, dx_line, x_max, y_max)
 
     if use_flathead:
@@ -179,29 +175,26 @@ def do_splice(input_coordinate):
     global spliced_plot
     spliced_plot.clear()
     spliced_coordinate = np.array([input_coordinate[0]])
-    print(spliced_coordinate)
     
     units_to_skip = 2
     if (one_dir_printing):
         units_to_skip = 3
     
     for set in range(1, len(input_coordinate), units_to_skip):
-        list_of_boxes = []
         spliced_vector = splice_vector_into_pts(input_coordinate[set-1], input_coordinate[set], int(pts_per_line))
         spliced_coordinate = np.vstack((spliced_coordinate, spliced_vector))
         
         if one_dir_printing:
             #skipping a step forward:
             spliced_coordinate = np.vstack((spliced_coordinate, input_coordinate[set+1]))
-        if use_flathead:
-            draw_rect(set, input_coordinate, list_of_boxes)
     spliced_coordinate = np.delete(spliced_coordinate, 0, 0)
-    return spliced_coordinate, list_of_boxes
+    return spliced_coordinate
 
 
-def calc_speeds(spliced_coordinate):
-    speed_corresponding_to_spliced_coord = []
-    # create array for each point's speed
+def calc_extrusion_dist(spliced_coordinate):
+    extrusion_dist_corr_to_splice_coord = []
+    list_of_boxes = []
+    # create array for each point's extrusion distance
     v_list_length = (pts_per_line-1)*line_per_group*num_groups
     #convert extrusion rate to extrude distance
     extrude_dist_min = extrude_vmin*product_height/(velocity_of_nozzle/60)
@@ -214,8 +207,14 @@ def calc_speeds(spliced_coordinate):
         if one_dir_printing:
             new_segment.append(0)
         new_segment.append(0)
-        speed_corresponding_to_spliced_coord = np.append(speed_corresponding_to_spliced_coord, new_segment, 0)
-    return speed_corresponding_to_spliced_coord
+        extrusion_dist_corr_to_splice_coord = np.append(extrusion_dist_corr_to_splice_coord, new_segment, 0)
+    extrusion_dist_corr_to_splice_coord = np.insert(extrusion_dist_corr_to_splice_coord[:-1], 0, 0)
+        
+    if use_flathead:
+        for set in range(1,len(spliced_coordinate)):
+            if extrusion_dist_corr_to_splice_coord[set] != 0:
+                list_of_boxes.append(draw_rect(set, spliced_coordinate, list_of_boxes))
+    return extrusion_dist_corr_to_splice_coord, list_of_boxes
 
 ###GUI stuff mostly
 
@@ -342,36 +341,29 @@ def update_graph():
 
     # recalculate
     input_coordinate = find_path()
-    print(input_coordinate)
 
-    spliced_coordinate,list_of_boxes = do_splice(input_coordinate)
+    spliced_coordinate = do_splice(input_coordinate)
 
-    speed_corresponding_to_spliced_coord = calc_speeds(spliced_coordinate)
+    extrusion_dist_corr_to_splice_coord, list_of_boxes = calc_extrusion_dist(spliced_coordinate)
 
     # Update the plot
     spliced_plot.set_aspect('equal', adjustable='box')
     #z height for line segments, corners added later
     z_list = np.zeros((len(spliced_coordinate), 1)) + printing_height
     z_list.fill(printing_height)
-    #merging x,y with z arrays to form x,y,z array
-    speed_corresponding_to_spliced_coord = np.insert(speed_corresponding_to_spliced_coord[:-1], 0, 0)
-    sub = np.concatenate((spliced_coordinate, z_list, np.atleast_2d(speed_corresponding_to_spliced_coord).T), axis=1)
+    #merging x,y and extr dist with z arrays to form merged array
+    sub = np.concatenate((spliced_coordinate, z_list, np.atleast_2d(extrusion_dist_corr_to_splice_coord).T), axis=1)
     
-    print(sub)
-    skip_key = 0    #bandage fix for raise mechanic in onedirprinting
+    skip_key = 0    # bit scuffed
     final_coordinate = np.empty((0,4))
     for i,coordinate in enumerate(sub):
         if skip_key == 0:
             final_coordinate = np.append(final_coordinate, [coordinate], axis=0)
         skip_key = 0
         if i < len(sub)-1 and any(np.all(coordinate[0:2] == row) for row in input_coordinate) and coordinate[3] != 0:
-            print(np.array([sub[i][0],sub[i][1],printing_height+raise_height,0]))
             final_coordinate = np.append(final_coordinate, np.array([[sub[i][0],sub[i][1],printing_height+raise_height,0]]), axis=0)
             final_coordinate = np.append(final_coordinate, np.array([[sub[i+1][0],sub[i+1][1],printing_height+raise_height,0]]), axis=0)
             if one_dir_printing: skip_key = 1
-    print("END")
-    print(final_coordinate)
-                
     
     x = final_coordinate[:, 0]
     y = final_coordinate[:, 1]
@@ -385,11 +377,11 @@ def update_graph():
     spliced_plot.set_prop_cycle('color', colors)
     for index in range(1,len(final_coordinate)):
         temp = final_coordinate[index-1:index+1]
-        #checking if index has corresponding speed assigned to it
-        try:
-            print(f"ACQUIRED FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}: {v[index]}")
-        except:
-            print(f"MISSING FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}")
+        #checking if index has corresponding extrusion distance assigned to it, stay commented if not debugging
+        #try:
+            #print(f"ACQUIRED FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}: {v[index]}")
+        #except:
+            #print(f"MISSING FOR #{x[index-1], y[index-1], z[index-1]} - #{x[index], y[index], z[index]}")
         #plotting segments: grey dashed is no printing: if extrude nothing or is a vertical movement
         if v[index] == 0 or (np.subtract((x[index-1], y[index-1]),(x[index], y[index])) == 0).all():
             spliced_plot.plot(temp[:, 0], temp[:, 1], color = "grey", ls = (0,(1,1)))
@@ -508,12 +500,12 @@ if len(file_name) > 1:
         
         try:
             coordinate = [[x,y+printer_y_offset] for [x,y] in final_coordinate[:,0:2]]
-            extrusion_speed = final_coordinate[:,3]
+            extrusion_dist = final_coordinate[:,3]
             elevation = final_coordinate[:,2]
         except TypeError:
             print("No input")
         for i in range(len(final_coordinate)):
-            line = get_gcode_block(coordinate[i], extrusion_speed[i], elevation[i])  #change back to regular gcode_block after testing
+            line = get_gcode_block(coordinate[i], extrusion_dist[i], elevation[i])  #change back to regular gcode_block after testing
             f.write(f"\n{line}")
 
         # ending code here
